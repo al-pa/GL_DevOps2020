@@ -1,0 +1,50 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+vm1 = { 'name' => "node1", 'ip' => "192.168.57.11", 'cpu' => '2', 'memory_mb' => '1024' }
+vm2 = { 'name' => "node2", 'ip' => "192.168.57.12", 'cpu' => '2', 'memory_mb' => '1024' }
+vm3 = { 'name' => "node3", 'ip' => "192.168.57.13", 'cpu' => '2', 'memory_mb' => '1024' }
+vms = [ vm1, vm2, vm3]
+
+hosts_check_string = "grep '192.168.57.11 node1 web1' /etc/hosts >/dev/null"
+
+hosts_config = %{cat >> /etc/hosts << EOF
+192.168.57.11 node1 web1
+192.168.57.12 node2 web2
+192.168.57.13 node3 db
+EOF}
+
+$common_script = <<-SHELL
+apt-get update
+apt-get install -y docker.io git curl
+
+echo 'Clone DKN git repo to home directory or update if already present'
+ls DKN  >/dev/null 2>&1 && git -C ~/DKN/ pull || git clone https://github.com/ask4ua/DKN.git
+
+echo 'Configure hosts file for usability'
+#{hosts_check_string} || #{hosts_config}
+SHELL
+
+
+Vagrant.configure(2) do |config|
+  # Disable updates when troubleshoot vagrantfile. It speedup VM startup.
+  config.vm.box_check_update = false
+  vms.each do |node|
+    vm_name = node['name']
+    vm_ip = node['ip']
+    vm_cpu = node['cpu']
+    vm_memory_mb = node['memory_mb']
+    config.vm.define vm_name do |node_config|
+      node_config.vm.hostname = "#{vm_name}"
+      node_config.vm.network 'private_network', ip: "#{vm_ip}"
+      node_config.vm.box = "hashicorp/bionic64"
+      node_config.vm.provider "virtualbox" do |vb|
+        vb.name = "#{vm_name}"
+        vb.cpus = "#{vm_cpu}" 
+        vb.memory = "#{vm_memory_mb}"  
+        end
+      node_config.vm.provision "shell", inline: $common_script
+      node_config.vm.provision "shell", path: "./provision/#{vm_name}/docker_startup.sh", privileged: false
+      end
+    end
+  end
